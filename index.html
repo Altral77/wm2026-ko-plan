@@ -119,6 +119,10 @@
     text-decoration:none;transition:transform .12s ease,box-shadow .12s ease}
   .promo-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.4)}
   .promo-card img{max-width:100%;max-height:96px;height:auto;display:block}
+  .promo-eyebrow{color:var(--muted);font-size:10.5px;font-weight:700;letter-spacing:.24em;
+    text-transform:uppercase;margin-bottom:12px}
+  .promo-eyebrow::before,.promo-eyebrow::after{content:"";display:inline-block;width:26px;
+    height:1px;background:var(--line);vertical-align:middle;margin:0 8px}
 </style>
 </head>
 <body>
@@ -169,6 +173,7 @@
 </div>
 
 <div class="promo">
+  <div class="promo-eyebrow">Sponsored by</div>
   <div class="promo-title">🌴 Gefällt dir der Plan? Dann besuch unsere Ferienwohnungen am Feldberg 🏔️</div>
   <div class="promo-sub">Schwarzwald-Urlaub in Grafenmatt – einfach aufs Logo klicken</div>
   <div class="promo-logos">
