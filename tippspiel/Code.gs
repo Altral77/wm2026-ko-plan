@@ -283,7 +283,7 @@ function spielplanAktualisieren() {
     ko = JSON.parse(txt);
   } catch (e) { /* Teams bleiben dann, wie sie sind */ }
 
-  let zeiten = 0, teams = 0;
+  let zeiten = 0, teams = 0, erg = 0;
   for (let i = 1; i < rows.length; i++) {
     const nr = parseInt(rows[i][0], 10); if (!nr) continue;
     if (KO_KICKOFF[nr]) { sh.getRange(i + 1, 3).setValue(new Date(KO_KICKOFF[nr])); zeiten++; }
@@ -291,9 +291,12 @@ function spielplanAktualisieren() {
     if (k) {
       if (k.heim && !String(rows[i][3]).trim()) { sh.getRange(i + 1, 4).setValue(k.heim); teams++; }
       if (k.gast && !String(rows[i][4]).trim()) { sh.getRange(i + 1, 5).setValue(k.gast); teams++; }
+      // Ergebnis (nach Verlängerung) – nur wenn Feld leer ist, damit manuelle Korrekturen bleiben
+      if (k.th !== null && k.th !== undefined && String(rows[i][5]).trim() === '') { sh.getRange(i + 1, 6).setValue(k.th); erg++; }
+      if (k.ta !== null && k.ta !== undefined && String(rows[i][6]).trim() === '') { sh.getRange(i + 1, 7).setValue(k.ta); erg++; }
     }
   }
-  Logger.log('Anpfiffzeiten gesetzt: ' + zeiten + ' | Teams ergänzt: ' + teams);
+  Logger.log('Anpfiffzeiten: ' + zeiten + ' | Teams ergänzt: ' + teams + ' | Ergebnisse ergänzt: ' + erg);
 }
 
 function triggerEinrichten() {

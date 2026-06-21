@@ -11,7 +11,7 @@ Prinzip (robust):
 - Fehlt bei Wikipedia ein Spiel oder schlaegt eine Gruppe fehl, bleibt der bisherige
   Stand dieser Partie/Gruppe erhalten. Es geht also nie etwas kaputt.
 """
-import json, re, sys, time, os, urllib.request, urllib.error
+import json, re, sys, time, os, urllib.request, urllib.error, urllib.parse
 from itertools import product
 
 CODE2DE = {
@@ -31,13 +31,13 @@ CODE2DE = {
 DE2CODE = {v: k for k, v in CODE2DE.items()}
 GROUPS = "ABCDEFGHIJKL"
 API = ("https://en.wikipedia.org/w/api.php?action=parse"
-       "&page=2026_FIFA_World_Cup_Group_{}&prop=wikitext&format=json&formatversion=2")
+       "&page={}&prop=wikitext&format=json&formatversion=2")
 
-def fetch(g, tries=4):
+def wiki_wikitext(page, tries=4):
     last = None
     for i in range(tries):
         try:
-            req = urllib.request.Request(API.format(g),
+            req = urllib.request.Request(API.format(urllib.parse.quote(page)),
                 headers={'User-Agent': 'wm2026-ko-plan updater (github actions)'})
             with urllib.request.urlopen(req, timeout=30) as r:
                 return json.load(r)['parse']['wikitext']
@@ -48,6 +48,41 @@ def fetch(g, tries=4):
                 continue
             raise
     raise last
+
+def fetch(g):
+    return wiki_wikitext('2026_FIFA_World_Cup_Group_' + g)
+
+# --- K.o.-Seite: Abschnitts-ID -> Spielnummer (stabil), Finale separat ---
+KO_PAGE = '2026 FIFA World Cup knockout stage'
+FINAL_PAGE = '2026 FIFA World Cup final'
+KO_SECTION_TO_NR = {'R32-1':73,'R32-2':76,'R32-3':74,'R32-4':75,'R32-5':78,'R32-6':77,'R32-7':79,'R32-8':80,
+ 'R32-9':82,'R32-10':81,'R32-11':84,'R32-12':83,'R32-13':85,'R32-14':88,'R32-15':86,'R32-16':87,
+ 'R16-1':90,'R16-2':89,'R16-3':91,'R16-4':92,'R16-5':93,'R16-6':94,'R16-7':95,'R16-8':96,
+ 'QF1':97,'QF2':98,'QF3':99,'QF4':100,'SF1':101,'SF2':102,'3rd':103}
+
+def _box_data(b):
+    c1 = re.search(r'team1=\{\{#invoke:flag\|fb(?:-rt)?\|([A-Z]{3})\}\}', b)
+    c2 = re.search(r'team2=\{\{#invoke:flag\|fb(?:-rt)?\|([A-Z]{3})\}\}', b)
+    sc = re.search(r'score=\{\{score link\|[^|]*\|([^}]+)\}\}', b)
+    ms = re.search(r'(\d+)\s*[–-]\s*(\d+)', sc.group(1)) if sc else None
+    return {
+        'heim': CODE2DE.get(c1.group(1)) if c1 else None,
+        'gast': CODE2DE.get(c2.group(1)) if c2 else None,
+        'th': int(ms.group(1)) if ms else None,   # Ergebnis nach Verlängerung (Elfmeter entscheiden nur den Sieger)
+        'ta': int(ms.group(2)) if ms else None,
+    }
+
+def parse_ko_page(t):
+    out = {}
+    for b in re.split(r'#invoke:football box', t)[1:]:
+        sec = re.search(r'section end="([^"]+)"', b)
+        nr = KO_SECTION_TO_NR.get(sec.group(1)) if sec else None
+        if nr: out[nr] = _box_data(b)
+    return out
+
+def parse_final_page(t):
+    parts = re.split(r'#invoke:football box', t)
+    return _box_data(parts[1]) if len(parts) > 1 else None
 
 def parse_results(t):
     """frozenset({code1,code2}) -> (code1, score1, score2)  oder None (Spiel angesetzt)."""
@@ -129,21 +164,44 @@ def group_locks(teams, matches):
     return l1, l2
 
 def write_ko_json(groups):
+    ko = {str(n): {'heim': None, 'gast': None, 'th': None, 'ta': None} for n in range(73, 105)}
+
+    # 1) Frühsignal: feststehende Gruppensieger/-zweite ins Sechzehntelfinale
     locks = {}
     for g in GROUPS:
         teams, matches = parse_group_js(groups[g])
         l1, l2 = group_locks(teams, matches)
         locks[g] = {'1': l1, '2': l2}
     def resolve(slot):
-        if slot[0] == '3': return None       # Gruppendritte erst nach FIFA-Zuordnung -> manuell
+        if slot[0] == '3': return None
         return locks[slot[1]][slot[0]]
-    ko = {}
     for nr, (hs, gs) in R32.items():
-        ko[str(nr)] = {'heim': resolve(hs), 'gast': resolve(gs)}
+        ko[str(nr)]['heim'] = resolve(hs)
+        ko[str(nr)]['gast'] = resolve(gs)
+
+    # 2) Offizielle K.o.-Seite: Paarungen + Ergebnisse (autoritativ), Spiele 73–103
+    try:
+        for nr, v in parse_ko_page(wiki_wikitext(KO_PAGE)).items():
+            s = ko[str(nr)]
+            for f in ('heim', 'gast', 'th', 'ta'):
+                if v[f] is not None: s[f] = v[f]
+    except Exception as e:
+        print('WARN K.o.-Seite:', e, file=sys.stderr)
+
+    # 3) Finale (eigene Seite) -> Spiel 104
+    try:
+        fin = parse_final_page(wiki_wikitext(FINAL_PAGE))
+        if fin:
+            for f in ('heim', 'gast', 'th', 'ta'):
+                if fin[f] is not None: ko['104'][f] = fin[f]
+    except Exception as e:
+        print('WARN Finale:', e, file=sys.stderr)
+
     os.makedirs('tippspiel', exist_ok=True)
     open('tippspiel/ko.json', 'w', encoding='utf-8').write(json.dumps(ko, ensure_ascii=False))
-    n_locked = sum(1 for v in ko.values() if v['heim'] or v['gast'])
-    print(f"ko.json geschrieben ({n_locked}/16 R32-Spiele mit mind. einem fixen Team)")
+    nteams = sum(1 for v in ko.values() if v['heim'] or v['gast'])
+    nres = sum(1 for v in ko.values() if v['th'] is not None)
+    print(f"ko.json: {nteams}/32 Spiele mit Team(s), {nres}/32 mit Ergebnis")
 
 def main():
     html = open('index.html', encoding='utf-8').read()
