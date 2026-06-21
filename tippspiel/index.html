@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WM 2026 – Tippspiel (K.o.-Runde)</title>
+<style>
+  :root{
+    --bg:#0f1419; --panel:#1a2230; --panel2:#222d3d; --line:#2e3b4e;
+    --txt:#e6edf3; --muted:#8a99ad; --accent:#3fb950; --accent2:#58a6ff;
+    --yellow:#d4a72c; --red:#bf3b3b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  header{padding:16px 20px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#16202c,#0f1419);
+    display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+  h1{font-size:17px;margin:0}
+  .sub{color:var(--muted);font-size:12.5px}
+  a{color:var(--accent2)}
+  .wrap{padding:16px 20px;max-width:820px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:10px 0 4px}
+  input[type=text],input[type=email]{width:100%;background:var(--bg);color:var(--txt);
+    border:1px solid var(--line);border-radius:8px;padding:9px 10px;font-size:14px}
+  button{background:var(--accent2);color:#06223f;border:0;border-radius:8px;padding:9px 14px;
+    font-size:13px;font-weight:700;cursor:pointer}
+  button.sec{background:var(--panel2);color:var(--txt);border:1px solid var(--line);font-weight:500}
+  button:disabled{opacity:.5;cursor:default}
+  .tabs{display:flex;gap:8px;margin:6px 0 4px}
+  .tab{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px}
+  .tab.active{border-color:var(--accent2);background:#243447;font-weight:700}
+  .msg{font-size:13px;border-radius:8px;padding:9px 11px;margin:8px 0}
+  .msg.err{background:#3a1d22;border:1px solid #7a2b34;color:#ffb9c0}
+  .msg.ok{background:#16301f;border:1px solid #2c6b40;color:#a6e9be}
+  .rgroup{font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;
+    font-size:12px;margin:16px 0 6px}
+  .match{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;
+    padding:10px;margin:8px 0;background:var(--panel2);flex-wrap:wrap}
+  .match .meta{flex-basis:100%;color:var(--muted);font-size:11px;display:flex;justify-content:space-between}
+  .team{flex:1;font-weight:600;min-width:90px}
+  .team.h{text-align:right}
+  .score{width:42px;text-align:center;background:var(--bg);color:var(--txt);border:1px solid var(--line);
+    border-radius:7px;padding:7px;font-size:15px}
+  .colon{color:var(--muted)}
+  .savebtn{padding:7px 10px;font-size:12px}
+  .pill{font-size:10.5px;padding:2px 7px;border-radius:20px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+  .pill.lock{color:var(--yellow);border-color:#5a4a1e}
+  .pill.res{color:var(--accent);border-color:#2c6b40}
+  .pts{font-weight:700}
+  .pts.p3{color:var(--accent)} .pts.p2{color:#7fd0ff} .pts.p1{color:var(--yellow)} .pts.p0{color:var(--muted)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:7px 8px;text-align:left;border-top:1px solid var(--line)}
+  th{color:var(--muted);font-size:11px}
+  td.r,th.r{text-align:right}
+  tr.me td{background:rgba(88,166,255,.12)}
+  .hint{color:var(--muted);font-size:12px}
+  .rule{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin-top:4px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>⚽ WM 2026 – Tippspiel</h1>
+    <div class="sub">K.o.-Runde · getippt wird das Ergebnis nach 90 Minuten</div>
+  </div>
+  <div id="who" class="sub"></div>
+</header>
+
+<div class="wrap">
+  <div id="app"><div class="hint">Lädt…</div></div>
+  <div class="rule" style="margin-top:18px">
+    <span><b style="color:var(--accent)">3</b> exaktes Ergebnis</span>
+    <span><b style="color:#7fd0ff">2</b> Tendenz + Tordifferenz</span>
+    <span><b style="color:var(--yellow)">1</b> richtige Tendenz</span>
+    <span>· <a href="../">zum WM-Planer</a></span>
+  </div>
+</div>
+
+<script>
+/* === KONFIGURATION === */
+/* Nach dem Bereitstellen die Web-App-URL des Apps-Scripts hier eintragen: */
+const API_URL = "PASTE_WEB_APP_URL_HERE";
+
+const LS_TOKEN = 'wm2026_tipp_token', LS_NAME = 'wm2026_tipp_name';
+const $ = s => document.querySelector(s);
+const app = $('#app');
+let token = localStorage.getItem(LS_TOKEN) || '';
+let myName = localStorage.getItem(LS_NAME) || '';
+let view = 'tippen';
+
+function configured(){ return API_URL && API_URL.indexOf('PASTE_') !== 0; }
+async function apiGet(params){
+  const u = API_URL + (API_URL.indexOf('?')>=0?'&':'?') + params;
+  const r = await fetch(u); return r.json();
+}
+async function apiPost(obj){
+  const r = await fetch(API_URL, { method:'POST', body: JSON.stringify(obj) }); // text/plain -> kein CORS-Preflight
+  return r.json();
+}
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function punkte(th,ta,rh,ra){
+  if([th,ta,rh,ra].some(v=>v===null||v===undefined||v==='')) return 0;
+  if(th===rh&&ta===ra) return 3;
+  const dt=th-ta, dr=rh-ra;
+  const tend=(dt>0&&dr>0)||(dt<0&&dr<0)||(dt===0&&dr===0);
+  if(!tend) return 0; if(dt===dr) return 2; return 1;
+}
+
+function render(){
+  $('#who').textContent = myName ? ('Angemeldet: ' + myName) : '';
+  if(!configured()){
+    app.innerHTML = '<div class="card"><div class="msg err">Das Tippspiel ist noch nicht fertig eingerichtet (Server-URL fehlt).</div></div>';
+    return;
+  }
+  if(!token){ renderRegister(); } else { renderApp(); }
+}
+
+/* ---- Registrierung ---- */
+function renderRegister(){
+  app.innerHTML = `
+    <div class="card">
+      <h2 style="margin-top:0;font-size:16px">Anmelden</h2>
+      <p class="hint">Du brauchst einen Zugangs-Code. Den bekommst du von Ralf.</p>
+      <div id="rmsg"></div>
+      <label>Zugangs-Code</label>
+      <input type="text" id="r_code" placeholder="z. B. WM-ABC123" autocapitalize="characters">
+      <label>Name (wird in der Tabelle angezeigt)</label>
+      <input type="text" id="r_name" placeholder="Dein Name">
+      <label>E-Mail</label>
+      <input type="email" id="r_email" placeholder="du@beispiel.de">
+      <div style="margin-top:14px"><button id="r_btn">Anmelden & lostippen</button></div>
+    </div>`;
+  $('#r_btn').onclick = doRegister;
+}
+async function doRegister(){
+  const code = $('#r_code').value.trim(), name = $('#r_name').value.trim(), email = $('#r_email').value.trim();
+  const m = $('#rmsg');
+  if(!code||!name||!email){ m.innerHTML = '<div class="msg err">Bitte alle Felder ausfüllen.</div>'; return; }
+  $('#r_btn').disabled = true; m.innerHTML = '<div class="hint">Sende…</div>';
+  try{
+    const res = await apiPost({ action:'register', code, name, email });
+    if(!res.ok){ m.innerHTML = '<div class="msg err">'+esc(res.error||'Fehler')+'</div>'; $('#r_btn').disabled=false; return; }
+    token = res.token; myName = res.name;
+    localStorage.setItem(LS_TOKEN, token); localStorage.setItem(LS_NAME, myName);
+    render();
+  }catch(e){ m.innerHTML = '<div class="msg err">Verbindungsfehler. Bitte erneut versuchen.</div>'; $('#r_btn').disabled=false; }
+}
+
+/* ---- App (Tippen / Tabelle) ---- */
+function renderApp(){
+  app.innerHTML = `
+    <div class="tabs">
+      <div class="tab ${view==='tippen'?'active':''}" id="t_tip">Tippen</div>
+      <div class="tab ${view==='tabelle'?'active':''}" id="t_tab">Tabelle</div>
+      <div style="flex:1"></div>
+      <button class="sec" id="t_out">abmelden</button>
+    </div>
+    <div id="content"><div class="hint">Lädt…</div></div>`;
+  $('#t_tip').onclick = ()=>{ view='tippen'; renderApp(); };
+  $('#t_tab').onclick = ()=>{ view='tabelle'; renderApp(); };
+  $('#t_out').onclick = ()=>{ if(confirm('Abmelden? Dein Code bleibt verbraucht – du nutzt denselben Zugang weiter.')){ localStorage.removeItem(LS_TOKEN); localStorage.removeItem(LS_NAME); token=''; myName=''; render(); } };
+  if(view==='tippen') loadMatches(); else loadLeaderboard();
+}
+
+async function loadMatches(){
+  const c = $('#content');
+  try{
+    const res = await apiGet('action=matches&token='+encodeURIComponent(token));
+    if(!res.ok){ c.innerHTML = '<div class="msg err">'+esc(res.error||'Fehler')+'</div>'; return; }
+    let html=''; let round='';
+    res.matches.forEach(m=>{
+      if(m.runde!==round){ round=m.runde; html += '<div class="rgroup">'+esc(round)+'</div>'; }
+      html += matchRow(m);
+    });
+    c.innerHTML = html || '<div class="hint">Noch keine Spiele.</div>';
+    res.matches.forEach(m=>{ const b=document.getElementById('save_'+m.nr); if(b) b.onclick=()=>saveTip(m.nr); });
+  }catch(e){ c.innerHTML = '<div class="msg err">Verbindungsfehler.</div>'; }
+}
+function matchRow(m){
+  const tip = m.tipp; const th = tip?tip[0]:'' , ta = tip?tip[1]:'';
+  let right='';
+  if(m.hasResult){
+    const p = tip ? punkte(tip[0],tip[1],m.toreHeim,m.toreGast) : 0;
+    right = '<span class="pill res">Ergebnis '+m.toreHeim+':'+m.toreGast+'</span> '+
+            (tip? '<span class="pts p'+p+'">'+p+' Pkt</span>' : '<span class="pts p0">–</span>');
+  } else if(m.locked){
+    right = '<span class="pill lock">🔒 Frist abgelaufen</span>';
+  }
+  if(!m.bereit){
+    return '<div class="match"><div class="meta"><span>Spiel '+m.nr+'</span><span>'+esc(m.anpfiffText)+'</span></div>'+
+           '<div class="hint" style="flex:1">Teams stehen noch nicht fest.</div></div>';
+  }
+  const dis = (m.locked||m.hasResult) ? 'disabled' : '';
+  const save = (m.locked||m.hasResult) ? '' :
+    '<button class="savebtn" id="save_'+m.nr+'">speichern</button>';
+  return '<div class="match">'+
+    '<div class="meta"><span>Spiel '+m.nr+'</span><span>'+esc(m.anpfiffText)+(m.anpfiffText?' Uhr':'')+'</span></div>'+
+    '<div class="team h">'+esc(m.heim)+'</div>'+
+    '<input class="score" id="h_'+m.nr+'" type="text" inputmode="numeric" value="'+th+'" '+dis+'>'+
+    '<span class="colon">:</span>'+
+    '<input class="score" id="a_'+m.nr+'" type="text" inputmode="numeric" value="'+ta+'" '+dis+'>'+
+    '<div class="team">'+esc(m.gast)+'</div>'+
+    '<div style="flex-basis:100%;display:flex;justify-content:flex-end;align-items:center;gap:8px">'+
+       '<span id="smsg_'+m.nr+'" class="hint"></span>'+right+save+'</div>'+
+  '</div>';
+}
+async function saveTip(nr){
+  const h = $('#h_'+nr).value.trim(), a = $('#a_'+nr).value.trim();
+  const sm = $('#smsg_'+nr);
+  if(h===''||a===''||isNaN(h)||isNaN(a)){ sm.innerHTML='<span style="color:var(--red)">Tore eingeben</span>'; return; }
+  sm.textContent='…';
+  const res = await apiPost({ action:'tip', token, matchNr:nr, home:parseInt(h,10), away:parseInt(a,10) });
+  if(res.ok){ sm.innerHTML='<span style="color:var(--accent)">✓ gespeichert</span>'; }
+  else { sm.innerHTML='<span style="color:var(--red)">'+esc(res.error||'Fehler')+'</span>'; if(/Frist|fest/.test(res.error||'')) loadMatches(); }
+}
+
+async function loadLeaderboard(){
+  const c = $('#content');
+  try{
+    const res = await apiGet('action=leaderboard');
+    if(!res.ok){ c.innerHTML = '<div class="msg err">'+esc(res.error||'Fehler')+'</div>'; return; }
+    if(!res.tabelle.length){ c.innerHTML='<div class="hint">Noch keine Teilnehmer.</div>'; return; }
+    let rows = res.tabelle.map(s=>
+      '<tr class="'+(s.name===myName?'me':'')+'"><td class="r">'+s.platz+'</td><td>'+esc(s.name)+
+      '</td><td class="r">'+s.getippt+'</td><td class="r">'+s.exakt+'</td><td class="r"><b>'+s.punkte+'</b></td></tr>').join('');
+    c.innerHTML = '<div class="card" style="padding:6px 10px"><table>'+
+      '<tr><th class="r">#</th><th>Name</th><th class="r">Tipps</th><th class="r">Exakt</th><th class="r">Punkte</th></tr>'+
+      rows+'</table></div>';
+  }catch(e){ c.innerHTML = '<div class="msg err">Verbindungsfehler.</div>'; }
+}
+
+render();
+</script>
+</body>
+</html>
