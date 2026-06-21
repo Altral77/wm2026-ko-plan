@@ -161,8 +161,8 @@
     <button id="reset">↺ auf 21.06.2026 zurücksetzen</button>
     <label class="toggle"><input type="checkbox" id="hideOut"> ausgeschiedene (durchgestrichene) ausblenden</label>
     <span style="flex:1"></span>
-    <button class="viewbtn active" id="vList">📋 Liste</button>
-    <button class="viewbtn" id="vTree">🌳 Baum</button>
+    <button class="viewbtn" id="vList">📋 Liste</button>
+    <button class="viewbtn active" id="vTree">🌳 Baum</button>
   </div>
 
   <details open>
@@ -177,7 +177,7 @@
     <span class="lg-o">nicht mehr möglich (durchgestrichen)</span>
   </div>
 
-  <div class="bracket" id="bracket"></div>
+  <div class="bracket" id="bracket" style="display:none"></div>
 
   <div id="treeWrap">
     <div class="treescroll"><div class="bt-inner" id="btInner"></div></div>
@@ -527,7 +527,7 @@ function drawConnectors(){
   });
   svg.innerHTML=`<path d="${d}"/>`;
 }
-let currentView='list';
+let currentView='tree';
 function setView(v){
   currentView=v;
   document.getElementById('vList').classList.toggle('active',v==='list');
@@ -553,6 +553,7 @@ document.getElementById('reset').addEventListener('click',()=>{
 document.getElementById('saveState').addEventListener('click',save);
 
 fullInit();
+setView('tree');
 </script>
 </body>
 </html>
