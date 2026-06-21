@@ -107,6 +107,18 @@
   .bt-svg path{stroke:#3a4a5e;stroke-width:2;fill:none}
   .bt-p3wrap{margin-top:14px;max-width:260px}
   footer{color:var(--muted);font-size:11.5px;padding:10px 20px 30px;border-top:1px solid var(--line)}
+
+  /* ---- Werbung / Ferienwohnungen ---- */
+  .promo{max-width:920px;margin:26px auto 6px;padding:18px 18px 20px;border:1px solid var(--line);
+    border-radius:14px;background:var(--panel);text-align:center}
+  .promo-title{color:var(--txt);font-size:14px;margin-bottom:4px;font-weight:600}
+  .promo-sub{color:var(--muted);font-size:12.5px;margin-bottom:16px}
+  .promo-logos{display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
+  .promo-card{display:flex;align-items:center;justify-content:center;background:#fff;
+    border-radius:12px;padding:18px 24px;flex:0 1 330px;min-width:240px;
+    text-decoration:none;transition:transform .12s ease,box-shadow .12s ease}
+  .promo-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .promo-card img{max-width:100%;max-height:96px;height:auto;display:block}
 </style>
 </head>
 <body>
@@ -154,6 +166,19 @@
     <div class="bt-p3wrap"><div class="bt-coltitle">Spiel um Platz 3</div><div id="btP3"></div></div>
   </div>
 
+</div>
+
+<div class="promo">
+  <div class="promo-title">🌴 Gefällt dir der Plan? Dann besuch unsere Ferienwohnungen am Feldberg 🏔️</div>
+  <div class="promo-sub">Schwarzwald-Urlaub in Grafenmatt – einfach aufs Logo klicken</div>
+  <div class="promo-logos">
+    <a class="promo-card" href="https://www.oldfields-paradise.com" target="_blank" rel="noopener noreferrer">
+      <img src="assets/oldfields-paradise.svg" alt="Oldfield's Paradise" loading="lazy">
+    </a>
+    <a class="promo-card" href="https://www.residenz-grafenmatt.com" target="_blank" rel="noopener noreferrer">
+      <img src="assets/residenz-grafenmatt.png" alt="Residenz Grafenmatt – Luxus am Feldberg" loading="lazy">
+    </a>
+  </div>
 </div>
 
 <footer>
