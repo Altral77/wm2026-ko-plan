@@ -11,7 +11,8 @@ Prinzip (robust):
 - Fehlt bei Wikipedia ein Spiel oder schlaegt eine Gruppe fehl, bleibt der bisherige
   Stand dieser Partie/Gruppe erhalten. Es geht also nie etwas kaputt.
 """
-import json, re, sys, time, urllib.request, urllib.error
+import json, re, sys, time, os, urllib.request, urllib.error
+from itertools import product
 
 CODE2DE = {
  'MEX':'Mexiko','RSA':'Südafrika','KOR':'Südkorea','CZE':'Tschechien',
@@ -83,6 +84,67 @@ def update_group(text, results):
     new = re.sub(r'\[(\d+),(\d+),(null|\d+),(null|\d+),"([^"]*)"\]', repl, text)
     return new
 
+# --- Sechzehntelfinale: welcher Slot speist welches Spiel (für ko.json) ---
+# Slot: ('1',G)=Gruppensieger, ('2',G)=Gruppenzweiter, ('3',)=Gruppendritter (bleibt offen)
+R32 = {
+ 73:[('2','A'),('2','B')], 74:[('1','E'),('3',)], 75:[('1','F'),('2','C')], 76:[('1','C'),('2','F')],
+ 77:[('1','I'),('3',)],    78:[('2','E'),('2','I')], 79:[('1','A'),('3',)], 80:[('1','L'),('3',)],
+ 81:[('1','D'),('3',)],    82:[('1','G'),('3',)],   83:[('2','K'),('2','L')], 84:[('1','H'),('2','J')],
+ 85:[('1','B'),('3',)],    86:[('1','J'),('2','H')], 87:[('1','K'),('3',)],  88:[('2','D'),('2','G')],
+}
+
+def parse_group_js(text):
+    tm = re.search(r'teams:\[(.*?)\]', text, re.S).group(1)
+    teams = re.findall(r'"((?:[^"\\]|\\.)*)"', tm)
+    matches = []
+    for m in re.finditer(r'\[(\d+),(\d+),(null|\d+),(null|\d+),"([^"]*)"\]', text):
+        hs = None if m.group(3) == 'null' else int(m.group(3))
+        as_ = None if m.group(4) == 'null' else int(m.group(4))
+        matches.append((int(m.group(1)), int(m.group(2)), hs, as_, m.group(5)))
+    return teams, matches
+
+def group_locks(teams, matches):
+    """Gibt (Sieger, Zweiter) zurück, sofern bereits eindeutig feststehend, sonst None."""
+    n = len(teams); base = [0]*n; rem = []
+    for h, a, hs, as_, _ in matches:
+        if hs is not None and as_ is not None:
+            if hs > as_: base[h] += 3
+            elif hs < as_: base[a] += 3
+            else: base[h] += 1; base[a] += 1
+        else: rem.append((h, a))
+    can1, can2 = set(), set()
+    for combo in product(range(3), repeat=len(rem)):
+        p = base[:]
+        for o, (h, a) in zip(combo, rem):
+            if o == 0: p[h] += 3
+            elif o == 1: p[h] += 1; p[a] += 1
+            else: p[a] += 3
+        for t in range(n):
+            g = sum(1 for u in range(n) if u != t and p[u] > p[t])
+            e = sum(1 for u in range(n) if u != t and p[u] == p[t])
+            if g == 0: can1.add(t)
+            if g <= 1 and g + e >= 1: can2.add(t)
+    l1 = teams[next(iter(can1))] if len(can1) == 1 else None
+    l2 = teams[next(iter(can2))] if len(can2) == 1 else None
+    return l1, l2
+
+def write_ko_json(groups):
+    locks = {}
+    for g in GROUPS:
+        teams, matches = parse_group_js(groups[g])
+        l1, l2 = group_locks(teams, matches)
+        locks[g] = {'1': l1, '2': l2}
+    def resolve(slot):
+        if slot[0] == '3': return None       # Gruppendritte erst nach FIFA-Zuordnung -> manuell
+        return locks[slot[1]][slot[0]]
+    ko = {}
+    for nr, (hs, gs) in R32.items():
+        ko[str(nr)] = {'heim': resolve(hs), 'gast': resolve(gs)}
+    os.makedirs('tippspiel', exist_ok=True)
+    open('tippspiel/ko.json', 'w', encoding='utf-8').write(json.dumps(ko, ensure_ascii=False))
+    n_locked = sum(1 for v in ko.values() if v['heim'] or v['gast'])
+    print(f"ko.json geschrieben ({n_locked}/16 R32-Spiele mit mind. einem fixen Team)")
+
 def main():
     html = open('index.html', encoding='utf-8').read()
     block = re.search(r'/\*DATA_START\*/(.*?)/\*DATA_END\*/', html, re.S)
@@ -110,6 +172,10 @@ def main():
     open('index.html', 'w', encoding='utf-8').write(new_html)
     print(f"OK. Aktualisiert: {updated} | unveraendert/Fallback: {kept} | "
           f"Datei geaendert: {new_html != html}")
+    try:
+        write_ko_json(groups)
+    except Exception as e:
+        print('WARN ko.json:', e, file=sys.stderr)
 
 if __name__ == '__main__':
     main()

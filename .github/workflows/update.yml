@@ -24,11 +24,11 @@ jobs:
         run: python update.py
       - name: Bei Änderung committen
         run: |
-          if [ -n "$(git status --porcelain index.html)" ]; then
+          if [ -n "$(git status --porcelain index.html tippspiel/ko.json)" ]; then
             git config user.name "wm2026-bot"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add index.html
-            git commit -m "Auto-Update Gruppendaten ($(date -u +%Y-%m-%d))"
+            git add index.html tippspiel/ko.json
+            git commit -m "Auto-Update Gruppendaten + ko.json ($(date -u +%Y-%m-%d))"
             git push
             echo "Aktualisiert und gepusht."
           else

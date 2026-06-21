@@ -249,3 +249,57 @@ function zufallscode_() {
   for (let i = 0; i < 6; i++) s += A.charAt(Math.floor(Math.random() * A.length));
   return 'WM-' + s;
 }
+
+/* ============================================================
+ *  Spielplan-Automatik (Anpfiffzeiten + R32-Teams)
+ *  spielplanAktualisieren() ausführen:
+ *   - trägt alle Anpfiffzeiten ein (exakte Zeitpunkte, dt. Zeit)
+ *   - holt die feststehenden Sechzehntelfinal-Teams (1./2. der Gruppen)
+ *     aus dem WM-Planer und füllt leere Heim/Gast-Felder
+ *   - vorhandene Einträge & Ergebnisse werden NIE überschrieben
+ *  triggerEinrichten() legt einen 6-Stunden-Automatik-Lauf an.
+ * ============================================================ */
+const KO_JSON_URL = 'https://altral77.github.io/wm2026-ko-plan/tippspiel/ko.json';
+// Anpfiff je Spiel als UTC-Zeitpunkt (exakt) – Anzeige erfolgt in dt. Zeit.
+const KO_KICKOFF = {
+  73:'2026-06-28T19:00:00Z', 74:'2026-06-29T20:30:00Z', 75:'2026-06-30T01:00:00Z', 76:'2026-06-29T17:00:00Z',
+  77:'2026-06-30T21:00:00Z', 78:'2026-06-30T17:00:00Z', 79:'2026-07-01T01:00:00Z', 80:'2026-07-01T16:00:00Z',
+  81:'2026-07-02T00:00:00Z', 82:'2026-07-01T20:00:00Z', 83:'2026-07-02T23:00:00Z', 84:'2026-07-02T19:00:00Z',
+  85:'2026-07-03T03:00:00Z', 86:'2026-07-03T22:00:00Z', 87:'2026-07-04T01:30:00Z', 88:'2026-07-03T18:00:00Z',
+  89:'2026-07-04T21:00:00Z', 90:'2026-07-04T17:00:00Z', 91:'2026-07-05T20:00:00Z', 92:'2026-07-06T00:00:00Z',
+  93:'2026-07-06T19:00:00Z', 94:'2026-07-07T00:00:00Z', 95:'2026-07-07T16:00:00Z', 96:'2026-07-07T20:00:00Z',
+  97:'2026-07-09T20:00:00Z', 98:'2026-07-10T19:00:00Z', 99:'2026-07-11T21:00:00Z', 100:'2026-07-12T01:00:00Z',
+  101:'2026-07-14T19:00:00Z', 102:'2026-07-15T19:00:00Z', 103:'2026-07-18T21:00:00Z', 104:'2026-07-19T19:00:00Z',
+};
+
+function spielplanAktualisieren() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(SHEETS.matches.name);
+  const rows = sh.getDataRange().getValues();
+
+  let ko = {};
+  try {
+    const txt = UrlFetchApp.fetch(KO_JSON_URL, { muteHttpExceptions: true }).getContentText();
+    ko = JSON.parse(txt);
+  } catch (e) { /* Teams bleiben dann, wie sie sind */ }
+
+  let zeiten = 0, teams = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const nr = parseInt(rows[i][0], 10); if (!nr) continue;
+    if (KO_KICKOFF[nr]) { sh.getRange(i + 1, 3).setValue(new Date(KO_KICKOFF[nr])); zeiten++; }
+    const k = ko[String(nr)];
+    if (k) {
+      if (k.heim && !String(rows[i][3]).trim()) { sh.getRange(i + 1, 4).setValue(k.heim); teams++; }
+      if (k.gast && !String(rows[i][4]).trim()) { sh.getRange(i + 1, 5).setValue(k.gast); teams++; }
+    }
+  }
+  Logger.log('Anpfiffzeiten gesetzt: ' + zeiten + ' | Teams ergänzt: ' + teams);
+}
+
+function triggerEinrichten() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'spielplanAktualisieren') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('spielplanAktualisieren').timeBased().everyHours(6).create();
+  Logger.log('Automatik aktiv: spielplanAktualisieren läuft alle 6 Stunden.');
+}
