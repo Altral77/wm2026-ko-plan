@@ -2,8 +2,8 @@ name: Tägliches Update der Gruppendaten
 
 on:
   schedule:
-    - cron: '0 9 * * *'      # täglich 09:00 UTC (11:00 dt. Sommerzeit)
-  workflow_dispatch: {}        # manuell auslösbar über den "Actions"-Tab
+    - cron: '*/15 * * * *'     # alle 15 Minuten (Ergebnisse kurz nach Abpfiff)
+  workflow_dispatch: {}         # manuell auslösbar über den "Actions"-Tab
 
 permissions:
   contents: write
