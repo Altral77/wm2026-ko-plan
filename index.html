@@ -148,17 +148,16 @@
 <div class="wrap">
 
   <div class="note" id="disclaimer">
-    <b>So funktioniert's:</b> Trage unten echte Ergebnisse ein (oder korrigiere sie) – die Engine berechnet automatisch,
-    welche Teams in jedem K.o.-Spiel noch möglich sind, und streicht die Unmöglichen durch.
-    Eingaben werden im Browser gespeichert.
+    <b>So funktioniert's:</b> Die Ergebnisse werden <b>alle 15 Minuten automatisch</b> aus offizieller Quelle aktualisiert –
+    du musst nichts eintragen. Die Engine berechnet daraus, welche Teams in jedem K.o.-Spiel noch möglich sind,
+    und streicht die Unmöglichen durch. (Du kannst unten trotzdem „Was-wäre-wenn"-Ergebnisse durchspielen;
+    beim Neuladen erscheint wieder der echte Live-Stand.)
     <br><b>Hinweis zu den 3.-Plätzen:</b> Bei welchem Spiel welcher Gruppendritte landet, legt die FIFA erst nach Abschluss
     aller Gruppen fest. Für die „3. aus …"-Felder werden daher <i>alle</i> Teams gelistet, die in einer der berechtigten Gruppen
     noch Dritter werden können (bewusst weit gefasst – der „beste 8 von 12"-Filter ist noch nicht angewandt).
   </div>
 
   <div class="controls">
-    <button id="saveState">💾 gespeichert</button>
-    <button id="reset">↺ auf 21.06.2026 zurücksetzen</button>
     <label class="toggle"><input type="checkbox" id="hideOut"> ausgeschiedene (durchgestrichene) ausblenden</label>
     <span style="flex:1"></span>
     <button class="viewbtn" id="vList">📋 Liste</button>
@@ -187,8 +186,8 @@
 </div>
 
 <footer>
-  Daten-Stand der Vorbelegung: 21. Juni 2026 (Quelle: Wikipedia-Gruppenseiten, gegengeprüft).
-  Bracket-Struktur: offizielle FIFA-/WM-Auslosung der 48er-K.o.-Phase. Tool rechnet lokal, ohne Server.
+  Ergebnisse werden alle 15 Minuten automatisch aktualisiert (Quelle: Wikipedia, gegengeprüft).
+  Bracket-Struktur: offizielle FIFA-/WM-Auslosung der 48er-K.o.-Phase.
 </footer>
 
 <script>
@@ -285,12 +284,8 @@ const ROUND_ORDER=["R32","R16","QF","SF","P3","F"];
 const ROUND_NAME={R32:"Sechzehntelfinale",R16:"Achtelfinale",QF:"Viertelfinale",SF:"Halbfinale",F:"Finale",P3:"Spiel um Platz 3"};
 const MBYID={}; MATCHES.forEach(m=>MBYID[m.id]=m);
 
-//// ---- State / persistence ----
-const LS="wm2026_ko_v1";
+//// ---- State (Live-Daten; manuelle Eingaben nur für die Sitzung) ----
 let GROUPS=structuredClone(DEFAULT_GROUPS);
-function load(){ try{const s=JSON.parse(localStorage.getItem(LS)); if(s) for(const g in s){ if(GROUPS[g]) s[g].forEach((sc,i)=>{GROUPS[g].matches[i][2]=sc[0];GROUPS[g].matches[i][3]=sc[1];});}}catch(e){} }
-function save(){ const o={}; for(const g in GROUPS){ o[g]=GROUPS[g].matches.map(m=>[m[2],m[3]]); } localStorage.setItem(LS,JSON.stringify(o)); flashSaved(); }
-function flashSaved(){ const b=document.getElementById('saveState'); b.textContent="💾 gespeichert ✓"; setTimeout(()=>b.textContent="💾 gespeichert",1200); }
 
 //// ---- Engine: pro Gruppe Positions-Möglichkeiten ----
 function groupCompute(g){
@@ -424,7 +419,7 @@ function renderGroups(){
       const g=e.target.dataset.g,i=+e.target.dataset.i,s=e.target.dataset.s;
       const v=e.target.value===''?null:Math.max(0,parseInt(e.target.value)||0);
       GROUPS[g].matches[i][s==='h'?2:3]=v;
-      save(); rerender();
+      rerender();
     });
   });
 }
@@ -539,18 +534,12 @@ function setView(v){
 
 //// ---- Orchestrierung ----
 function rerender(){ recomputeAll(); clearMemo(); renderGroups(); renderBracket(); if(currentView==='tree') renderTree(); }
-function fullInit(){ load(); rerender(); }
+function fullInit(){ rerender(); }
 
 document.getElementById('vList').addEventListener('click',()=>setView('list'));
 document.getElementById('vTree').addEventListener('click',()=>setView('tree'));
 window.addEventListener('resize',()=>{ if(currentView==='tree') drawConnectors(); });
 document.getElementById('hideOut').addEventListener('change',()=>{ renderBracket(); if(currentView==='tree') renderTree(); });
-document.getElementById('reset').addEventListener('click',()=>{
-  if(confirm("Alle Eingaben verwerfen und auf den Stand vom 21.06.2026 zurücksetzen?")){
-    localStorage.removeItem(LS); GROUPS=structuredClone(DEFAULT_GROUPS); rerender();
-  }
-});
-document.getElementById('saveState').addEventListener('click',save);
 
 fullInit();
 setView('tree');
