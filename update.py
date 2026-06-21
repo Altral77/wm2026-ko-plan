@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Aktualisiert die WM-2026-Gruppenergebnisse in index.html.
+
+Prinzip (robust):
+- Der feste Spielplan (alle 6 Partien je Gruppe, Teams, Datum) steht bereits als
+  Geruest im DATA-Block von index.html und wird NICHT veraendert.
+- Von den Wikipedia-Gruppenseiten werden nur die ERGEBNISSE geholt und je Partie
+  (ueber das Team-Paar) eingetragen.
+- Fehlt bei Wikipedia ein Spiel oder schlaegt eine Gruppe fehl, bleibt der bisherige
+  Stand dieser Partie/Gruppe erhalten. Es geht also nie etwas kaputt.
+"""
+import json, re, sys, time, urllib.request, urllib.error
+
+CODE2DE = {
+ 'MEX':'Mexiko','RSA':'Südafrika','KOR':'Südkorea','CZE':'Tschechien',
+ 'CAN':'Kanada','BIH':'Bosnien-H.','QAT':'Katar','SUI':'Schweiz',
+ 'BRA':'Brasilien','MAR':'Marokko','HAI':'Haiti','SCO':'Schottland',
+ 'USA':'USA','PAR':'Paraguay','AUS':'Australien','TUR':'Türkei',
+ 'GER':'Deutschland','CUW':'Curaçao','CIV':'Elfenbeinküste','ECU':'Ecuador',
+ 'NED':'Niederlande','JPN':'Japan','SWE':'Schweden','TUN':'Tunesien',
+ 'BEL':'Belgien','EGY':'Ägypten','IRN':'Iran','NZL':'Neuseeland',
+ 'ESP':'Spanien','CPV':'Kap Verde','KSA':'Saudi-Arabien','URU':'Uruguay',
+ 'FRA':'Frankreich','SEN':'Senegal','IRQ':'Irak','NOR':'Norwegen',
+ 'ARG':'Argentinien','ALG':'Algerien','AUT':'Österreich','JOR':'Jordanien',
+ 'POR':'Portugal','COD':'DR Kongo','UZB':'Usbekistan','COL':'Kolumbien',
+ 'ENG':'England','CRO':'Kroatien','GHA':'Ghana','PAN':'Panama',
+}
+DE2CODE = {v: k for k, v in CODE2DE.items()}
+GROUPS = "ABCDEFGHIJKL"
+API = ("https://en.wikipedia.org/w/api.php?action=parse"
+       "&page=2026_FIFA_World_Cup_Group_{}&prop=wikitext&format=json&formatversion=2")
+
+def fetch(g, tries=4):
+    last = None
+    for i in range(tries):
+        try:
+            req = urllib.request.Request(API.format(g),
+                headers={'User-Agent': 'wm2026-ko-plan updater (github actions)'})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.load(r)['parse']['wikitext']
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code == 429:
+                time.sleep(3 * (i + 1))  # Backoff bei Rate-Limit
+                continue
+            raise
+    raise last
+
+def parse_results(t):
+    """frozenset({code1,code2}) -> (code1, score1, score2)  oder None (Spiel angesetzt)."""
+    res = {}
+    for b in re.split(r'#invoke:football box', t)[1:]:
+        m1 = re.search(r'team1=\{\{#invoke:flag\|fb(?:-rt)?\|([A-Z]{3})\}\}', b)
+        m2 = re.search(r'team2=\{\{#invoke:flag\|fb(?:-rt)?\|([A-Z]{3})\}\}', b)
+        if not m1 or not m2:
+            continue
+        c1, c2 = m1.group(1), m2.group(1)
+        sc = re.search(r'score=\{\{score link\|[^|]*\|([^}]+)\}\}', b)
+        ms = re.search(r'(\d+)\s*[–-]\s*(\d+)', sc.group(1)) if sc else None
+        res[frozenset((c1, c2))] = (c1, int(ms.group(1)), int(ms.group(2))) if ms else None
+    return res
+
+def update_group(text, results):
+    """text = JS-Objekt '{teams:[...],matches:[...]}'. Ergebnisse je Paar eintragen."""
+    teams = re.findall(r'"((?:[^"\\]|\\.)*)"', re.search(r'teams:\[(.*?)\]', text, re.S).group(1))
+    def repl(m):
+        h, a = int(m.group(1)), int(m.group(2))
+        date = m.group(5)
+        ch, ca = DE2CODE.get(teams[h]), DE2CODE.get(teams[a])
+        key = frozenset((ch, ca))
+        if key in results:
+            r = results[key]
+            if r is None:
+                hs = as_ = 'null'                       # angesetzt
+            else:
+                c1, s1, s2 = r
+                hs, as_ = (s1, s2) if c1 == ch else (s2, s1)
+        else:
+            hs, as_ = m.group(3), m.group(4)            # Wikipedia hat das Spiel (noch) nicht -> behalten
+        return f'[{h},{a},{hs},{as_},"{date}"]'
+    new = re.sub(r'\[(\d+),(\d+),(null|\d+),(null|\d+),"([^"]*)"\]', repl, text)
+    return new
+
+def main():
+    html = open('index.html', encoding='utf-8').read()
+    block = re.search(r'/\*DATA_START\*/(.*?)/\*DATA_END\*/', html, re.S)
+    if not block:
+        print("FEHLER: DATA-Marker nicht gefunden.", file=sys.stderr); sys.exit(1)
+    groups = dict(re.findall(r'([A-L]):(\{[^{}]*\})', block.group(1)))
+    if len(groups) != 12:
+        print(f"FEHLER: {len(groups)} Gruppen im DATA-Block (erwartet 12).", file=sys.stderr); sys.exit(1)
+
+    updated, kept = [], []
+    for g in GROUPS:
+        try:
+            results = parse_results(fetch(g))
+            if not results:
+                raise ValueError("keine Spiele gefunden")
+            groups[g] = update_group(groups[g], results)
+            updated.append(g)
+        except Exception as e:
+            print(f"WARN Gruppe {g}: {e} -> bisheriger Stand bleibt", file=sys.stderr)
+            kept.append(g)
+        time.sleep(0.8)  # hoeflich gegenueber Wikipedia
+
+    inner = "\n " + ",\n ".join(f"{g}:{groups[g]}" for g in GROUPS) + "\n"
+    new_html = html[:block.start(1)] + inner + html[block.end(1):]
+    open('index.html', 'w', encoding='utf-8').write(new_html)
+    print(f"OK. Aktualisiert: {updated} | unveraendert/Fallback: {kept} | "
+          f"Datei geaendert: {new_html != html}")
+
+if __name__ == '__main__':
+    main()
