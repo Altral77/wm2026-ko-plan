@@ -130,8 +130,15 @@ function renderRegister(){
       <label>E-Mail</label>
       <input type="email" id="r_email" placeholder="du@beispiel.de">
       <div style="margin-top:14px"><button id="r_btn">Anmelden & lostippen</button></div>
-    </div>`;
+    </div>
+    <div style="text-align:center;margin-top:4px"><a href="#" id="showtab">📊 Aktuelle Tabelle ansehen (ohne Anmeldung)</a></div>`;
   $('#r_btn').onclick = doRegister;
+  $('#showtab').onclick = (e)=>{ e.preventDefault(); renderPublicTable(); };
+}
+async function renderPublicTable(){
+  app.innerHTML = '<div style="margin:6px 0"><a href="#" id="backreg">← zurück zur Anmeldung</a></div><div id="content"><div class="hint">Lädt…</div></div>';
+  $('#backreg').onclick = (e)=>{ e.preventDefault(); renderRegister(); };
+  await loadLeaderboard();
 }
 async function doRegister(){
   const code = $('#r_code').value.trim(), name = $('#r_name').value.trim(), email = $('#r_email').value.trim();
