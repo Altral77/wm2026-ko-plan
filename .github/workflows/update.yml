@@ -2,7 +2,9 @@ name: Tägliches Update der Gruppendaten
 
 on:
   schedule:
-    - cron: '*/15 * * * *'     # alle 15 Minuten (Ergebnisse kurz nach Abpfiff)
+    # GitHub führt geplante Jobs nur "best effort" aus (v.a. zur vollen Stunde verzögert).
+    # Off-Peak-Minuten erhöhen die Trefferquote; faktisch ca. alle 15-60 Min.
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch: {}         # manuell auslösbar über den "Actions"-Tab
 
 permissions:
