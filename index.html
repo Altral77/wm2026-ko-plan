@@ -288,10 +288,51 @@ const MBYID={}; MATCHES.forEach(m=>MBYID[m.id]=m);
 let GROUPS=structuredClone(DEFAULT_GROUPS);
 
 //// ---- Engine: pro Gruppe Positions-Möglichkeiten ----
+// Direkter Vergleich (Head-to-Head) für punkt-/TD-/tor-gleiche Teams; gibt geordnete
+// Unterblöcke zurück (gleichbleibende Blöcke = per Losentscheid offen).
+function resolveH2H(block,res){
+  if(block.length===1) return [block];
+  const S=new Set(block), mp={},mg={},mf={};
+  block.forEach(t=>{mp[t]=0;mg[t]=0;mf[t]=0;});
+  for(const [h,a,hs,as_] of res){
+    if(S.has(h)&&S.has(a)){
+      mf[h]+=hs;mf[a]+=as_; mg[h]+=hs-as_;mg[a]+=as_-hs;
+      if(hs>as_)mp[h]+=3; else if(hs<as_)mp[a]+=3; else{mp[h]++;mp[a]++;}
+    }
+  }
+  const sorted=[...block].sort((i,j)=> mp[j]-mp[i]||mg[j]-mg[i]||mf[j]-mf[i]);
+  const out=[]; let i=0;
+  while(i<sorted.length){ let j=i+1;
+    while(j<sorted.length && mp[sorted[j]]===mp[sorted[i]] && mg[sorted[j]]===mg[sorted[i]] && mf[sorted[j]]===mf[sorted[i]]) j++;
+    out.push(sorted.slice(i,j)); i=j; }
+  return out;
+}
+// Komplett gespieltes Szenario -> pro Team [minPlatz,maxPlatz] nach echten Regeln
+// (Punkte → Tordifferenz → Tore → direkter Vergleich → offen).
+function positionRanges(n,res){
+  const pts=Array(n).fill(0),gd=Array(n).fill(0),gf=Array(n).fill(0);
+  for(const [h,a,hs,as_] of res){
+    gf[h]+=hs;gf[a]+=as_; gd[h]+=hs-as_;gd[a]+=as_-hs;
+    if(hs>as_)pts[h]+=3; else if(hs<as_)pts[a]+=3; else{pts[h]++;pts[a]++;}
+  }
+  const idx=[...Array(n).keys()].sort((i,j)=> pts[j]-pts[i]||gd[j]-gd[i]||gf[j]-gf[i]);
+  const rng=Array.from({length:n},()=>[1,n]); let i=0,p=0;
+  while(i<n){ let j=i+1;
+    while(j<n && pts[idx[j]]===pts[idx[i]] && gd[idx[j]]===gd[idx[i]] && gf[idx[j]]===gf[idx[i]]) j++;
+    let pos=p;
+    for(const sub of resolveH2H(idx.slice(i,j),res)){
+      const lo=pos+1, hi=pos+sub.length;
+      for(const t of sub) rng[t]=[lo,hi];
+      pos+=sub.length;
+    }
+    p+=(j-i); i=j;
+  }
+  return rng;
+}
 function groupCompute(g){
   const G=GROUPS[g], n=G.teams.length;
   const base=Array(n).fill(0), gf=Array(n).fill(0), ga=Array(n).fill(0), pld=Array(n).fill(0), w=Array(n).fill(0),d=Array(n).fill(0),l=Array(n).fill(0);
-  const rem=[];
+  const played=[], rem=[];
   for(const m of G.matches){
     const [h,a,hs,as_]=m;
     if(hs!==null&&as_!==null){
@@ -299,22 +340,34 @@ function groupCompute(g){
       if(hs>as_){base[h]+=3;w[h]++;l[a]++;}
       else if(hs<as_){base[a]+=3;w[a]++;l[h]++;}
       else{base[h]++;base[a]++;d[h]++;d[a]++;}
-    } else rem.push(m);
+      played.push([h,a,hs,as_]);
+    } else rem.push([h,a]);
   }
   const can1=Array(n).fill(false),can2=Array(n).fill(false),can3=Array(n).fill(false);
-  const R=rem.length, total=Math.pow(3,R);
-  for(let c=0;c<total;c++){
-    const pts=base.slice(); let x=c;
-    for(let i=0;i<R;i++){ const o=x%3;x=(x-o)/3; const m=rem[i];
-      if(o===0)pts[m[0]]+=3; else if(o===1){pts[m[0]]++;pts[m[1]]++;} else pts[m[1]]+=3; }
-    for(let t=0;t<n;t++){ let gt=0,et=0;
-      for(let u=0;u<n;u++){ if(u===t)continue; if(pts[u]>pts[t])gt++; else if(pts[u]===pts[t])et++; }
-      if(gt===0)can1[t]=true;
-      if(gt<=1&&gt+et>=1)can2[t]=true;
-      if(gt<=2&&gt+et>=2)can3[t]=true;
+  const R=rem.length;
+  if(R<=3){
+    // EXAKT: alle Restergebnisse durchspielen (Tore 0..CAP) + echte Tabellenregeln (inkl. Tordifferenz)
+    const CAP=4, opts=[]; for(let x=0;x<=CAP;x++)for(let y=0;y<=CAP;y++)opts.push([x,y]);
+    const M=opts.length, total=Math.pow(M,R);
+    for(let c=0;c<total;c++){
+      const res=played.slice(); let cc=c;
+      for(let i=0;i<R;i++){ const o=opts[cc%M]; cc=Math.floor(cc/M); res.push([rem[i][0],rem[i][1],o[0],o[1]]); }
+      const rng=positionRanges(n,res);
+      for(let t=0;t<n;t++){ const lo=rng[t][0], hi=rng[t][1];
+        if(lo<=1)can1[t]=true; if(lo<=2&&hi>=2)can2[t]=true; if(lo<=3&&hi>=3)can3[t]=true; }
+    }
+  } else {
+    // Sehr früh im Turnier (zu viele Restspiele): konservativ nur nach Punkten
+    const total=Math.pow(3,R);
+    for(let c=0;c<total;c++){
+      const pts=base.slice(); let x=c;
+      for(let i=0;i<R;i++){ const o=x%3;x=(x-o)/3; const m=rem[i];
+        if(o===0)pts[m[0]]+=3; else if(o===1){pts[m[0]]++;pts[m[1]]++;} else pts[m[1]]+=3; }
+      for(let t=0;t<n;t++){ let gt=0,et=0;
+        for(let u=0;u<n;u++){ if(u===t)continue; if(pts[u]>pts[t])gt++; else if(pts[u]===pts[t])et++; }
+        if(gt===0)can1[t]=true; if(gt<=1&&gt+et>=1)can2[t]=true; if(gt<=2&&gt+et>=2)can3[t]=true; }
     }
   }
-  // Tabelle für Anzeige (Punkte, TD)
   const order=[...Array(n).keys()].sort((i,j)=> base[j]-base[i] || (gf[j]-ga[j])-(gf[i]-ga[i]) || gf[j]-gf[i]);
   return {can1,can2,can3,base,gf,ga,pld,w,d,l,order};
 }
