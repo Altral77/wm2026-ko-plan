@@ -288,42 +288,56 @@ const MBYID={}; MATCHES.forEach(m=>MBYID[m.id]=m);
 let GROUPS=structuredClone(DEFAULT_GROUPS);
 
 //// ---- Engine: pro Gruppe Positions-Möglichkeiten ----
-// Direkter Vergleich (Head-to-Head) für punkt-/TD-/tor-gleiche Teams; gibt geordnete
-// Unterblöcke zurück (gleichbleibende Blöcke = per Losentscheid offen).
-function resolveH2H(block,res){
-  if(block.length===1) return [block];
-  const S=new Set(block), mp={},mg={},mf={};
-  block.forEach(t=>{mp[t]=0;mg[t]=0;mf[t]=0;});
+// Mini-Tabelle (nur Spiele zwischen den genannten Teams) -> Punkte/TD/Tore im direkten Vergleich.
+function miniTable(teams,res){
+  const S=new Set(teams), p={},g={},f={};
+  teams.forEach(t=>{p[t]=0;g[t]=0;f[t]=0;});
   for(const [h,a,hs,as_] of res){
     if(S.has(h)&&S.has(a)){
-      mf[h]+=hs;mf[a]+=as_; mg[h]+=hs-as_;mg[a]+=as_-hs;
-      if(hs>as_)mp[h]+=3; else if(hs<as_)mp[a]+=3; else{mp[h]++;mp[a]++;}
+      f[h]+=hs;f[a]+=as_; g[h]+=hs-as_;g[a]+=as_-hs;
+      if(hs>as_)p[h]+=3; else if(hs<as_)p[a]+=3; else{p[h]++;p[a]++;}
     }
   }
-  const sorted=[...block].sort((i,j)=> mp[j]-mp[i]||mg[j]-mg[i]||mf[j]-mf[i]);
-  const out=[]; let i=0;
+  return {p,g,f};
+}
+// Direkter Vergleich (WM-2026: ZUERST), rekursiv mit Wiederanwendung auf verbliebene gleiche Teams.
+// Gibt geordnete Blöcke zurück; ein Block mit >1 Team ist per H2H nicht trennbar (weiter mit Gesamt-TD).
+function rankH2H(teams,res){
+  if(teams.length===1) return [teams];
+  const {p,g,f}=miniTable(teams,res);
+  const sorted=[...teams].sort((i,j)=> p[j]-p[i]||g[j]-g[i]||f[j]-f[i]);
+  const blocks=[]; let i=0;
   while(i<sorted.length){ let j=i+1;
-    while(j<sorted.length && mp[sorted[j]]===mp[sorted[i]] && mg[sorted[j]]===mg[sorted[i]] && mf[sorted[j]]===mf[sorted[i]]) j++;
-    out.push(sorted.slice(i,j)); i=j; }
+    while(j<sorted.length && p[sorted[j]]===p[sorted[i]] && g[sorted[j]]===g[sorted[i]] && f[sorted[j]]===f[sorted[i]]) j++;
+    blocks.push(sorted.slice(i,j)); i=j; }
+  if(blocks.length===1) return [teams];           // keine Trennung -> H2H erschöpft
+  const out=[];
+  for(const b of blocks){ if(b.length===1) out.push(b); else out.push(...rankH2H(b,res)); }
   return out;
 }
-// Komplett gespieltes Szenario -> pro Team [minPlatz,maxPlatz] nach echten Regeln
-// (Punkte → Tordifferenz → Tore → direkter Vergleich → offen).
+// Komplett gespieltes Szenario -> pro Team [minPlatz,maxPlatz] nach offizieller 2026er-Reihenfolge:
+// Punkte gesamt -> direkter Vergleich (Pkt/TD/Tore) -> Tordifferenz gesamt -> Tore gesamt -> (Fair Play/FIFA/Los = offen).
 function positionRanges(n,res){
   const pts=Array(n).fill(0),gd=Array(n).fill(0),gf=Array(n).fill(0);
   for(const [h,a,hs,as_] of res){
     gf[h]+=hs;gf[a]+=as_; gd[h]+=hs-as_;gd[a]+=as_-hs;
     if(hs>as_)pts[h]+=3; else if(hs<as_)pts[a]+=3; else{pts[h]++;pts[a]++;}
   }
-  const idx=[...Array(n).keys()].sort((i,j)=> pts[j]-pts[i]||gd[j]-gd[i]||gf[j]-gf[i]);
+  const idx=[...Array(n).keys()].sort((i,j)=> pts[j]-pts[i]);   // 1) nur nach Gesamtpunkten gruppieren
   const rng=Array.from({length:n},()=>[1,n]); let i=0,p=0;
   while(i<n){ let j=i+1;
-    while(j<n && pts[idx[j]]===pts[idx[i]] && gd[idx[j]]===gd[idx[i]] && gf[idx[j]]===gf[idx[i]]) j++;
+    while(j<n && pts[idx[j]]===pts[idx[i]]) j++;                 // Punktgleiche Gruppe
     let pos=p;
-    for(const sub of resolveH2H(idx.slice(i,j),res)){
-      const lo=pos+1, hi=pos+sub.length;
-      for(const t of sub) rng[t]=[lo,hi];
-      pos+=sub.length;
+    for(const blk of rankH2H(idx.slice(i,j),res)){               // 2) direkter Vergleich zuerst
+      // 3) innerhalb noch gleicher Blöcke: Gesamt-TD -> Gesamt-Tore -> (offen)
+      const s=[...blk].sort((a,b)=> gd[b]-gd[a]||gf[b]-gf[a]);
+      let k=0;
+      while(k<s.length){ let m=k+1;
+        while(m<s.length && gd[s[m]]===gd[s[k]] && gf[s[m]]===gf[s[k]]) m++;
+        const lo=pos+1, hi=pos+(m-k);
+        for(let x=k;x<m;x++) rng[s[x]]=[lo,hi];
+        pos+=(m-k); k=m;
+      }
     }
     p+=(j-i); i=j;
   }
