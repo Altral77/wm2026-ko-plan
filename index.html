@@ -341,8 +341,10 @@ function positionRanges(n,res){
     }
     p+=(j-i); i=j;
   }
-  return rng;
+  return {rng,pts,gd,gf};
 }
+// Vergleich zweier Dritten-Konten [Punkte,TD,Tore] (für Reihung der besten Dritten): a besser als b?
+function lineGt(a,b){ return a[0]!==b[0] ? a[0]>b[0] : a[1]!==b[1] ? a[1]>b[1] : a[2]>b[2]; }
 function groupCompute(g){
   const G=GROUPS[g], n=G.teams.length;
   const base=Array(n).fill(0), gf=Array(n).fill(0), ga=Array(n).fill(0), pld=Array(n).fill(0), w=Array(n).fill(0),d=Array(n).fill(0),l=Array(n).fill(0);
@@ -358,6 +360,8 @@ function groupCompute(g){
     } else rem.push([h,a]);
   }
   const can1=Array(n).fill(false),can2=Array(n).fill(false),can3=Array(n).fill(false);
+  const bestThird=Array(n).fill(null);   // bestmögliches Dritten-Konto je Team
+  let groupThirdMin=null;                // schwächstmöglicher Dritter dieser Gruppe
   const R=rem.length;
   if(R<=3){
     // EXAKT: alle Restergebnisse durchspielen (Tore 0..CAP) + echte Tabellenregeln (inkl. Tordifferenz)
@@ -366,9 +370,15 @@ function groupCompute(g){
     for(let c=0;c<total;c++){
       const res=played.slice(); let cc=c;
       for(let i=0;i<R;i++){ const o=opts[cc%M]; cc=Math.floor(cc/M); res.push([rem[i][0],rem[i][1],o[0],o[1]]); }
-      const rng=positionRanges(n,res);
+      const {rng,pts,gd,gf}=positionRanges(n,res);
       for(let t=0;t<n;t++){ const lo=rng[t][0], hi=rng[t][1];
-        if(lo<=1)can1[t]=true; if(lo<=2&&hi>=2)can2[t]=true; if(lo<=3&&hi>=3)can3[t]=true; }
+        if(lo<=1)can1[t]=true; if(lo<=2&&hi>=2)can2[t]=true;
+        if(lo<=3&&hi>=3){ can3[t]=true;
+          const line=[pts[t],gd[t],gf[t]];
+          if(!bestThird[t]||lineGt(line,bestThird[t])) bestThird[t]=line;
+          if(!groupThirdMin||lineGt(groupThirdMin,line)) groupThirdMin=line;
+        }
+      }
     }
   } else {
     // Sehr früh im Turnier (zu viele Restspiele): konservativ nur nach Punkten
@@ -383,10 +393,30 @@ function groupCompute(g){
     }
   }
   const order=[...Array(n).keys()].sort((i,j)=> base[j]-base[i] || (gf[j]-ga[j])-(gf[i]-ga[i]) || gf[j]-gf[i]);
-  return {can1,can2,can3,base,gf,ga,pld,w,d,l,order};
+  return {can1,can2,can3,base,gf,ga,pld,w,d,l,order,bestThird,groupThirdMin};
 }
-let GC={};
-function recomputeAll(){ GC={}; for(const g in GROUPS) GC[g]=groupCompute(g); }
+let GC={}, TOP8={};
+function recomputeAll(){
+  GC={}; for(const g in GROUPS) GC[g]=groupCompute(g);
+  computeTop8();
+}
+// Welche Gruppendritten können noch zu den besten 8 von 12 gehören? (Fair Play wird ignoriert)
+function computeTop8(){
+  TOP8={};
+  for(const g in GROUPS){
+    GROUPS[g].teams.forEach((name,ti)=>{
+      if(!GC[g].can3[ti]){ TOP8[name]=false; return; }      // kann gar nicht Dritter werden
+      const bt=GC[g].bestThird[ti];
+      if(!bt){ TOP8[name]=true; return; }                    // kein exaktes Konto (Fallback) -> nicht filtern
+      let besser=0;                                          // andere Gruppen, deren schwächster Dritter X sicher schlägt
+      for(const h in GROUPS){ if(h===g) continue;
+        const tm=GC[h].groupThirdMin;
+        if(tm && lineGt(tm,bt)) besser++;
+      }
+      TOP8[name] = (besser<=7);                              // höchstens 7 sicher davor -> Platz 8 noch möglich
+    });
+  }
+}
 
 //// ---- Slot-Auflösung -> Mengen von Teamnamen ----
 function teamsByCan(g,arr){ const out=[]; const c=GC[g]; GROUPS[g].teams.forEach((t,i)=>{ if(c[arr][i])out.push(t); }); return out; }
@@ -395,7 +425,8 @@ function possibleSide(side){
   if(side.t==="pos"){
     if(side.pos===1) return new Set(teamsByCan(side.g,"can1"));
     if(side.pos===2) return new Set(teamsByCan(side.g,"can2"));
-    const s=new Set(); side.gs.forEach(g=>teamsByCan(g,"can3").forEach(t=>s.add(t))); return s;
+    // Gruppendritte: nur, wer noch unter die besten 8 von 12 kommen kann
+    const s=new Set(); side.gs.forEach(g=>teamsByCan(g,"can3").forEach(t=>{ if(TOP8[t])s.add(t); })); return s;
   }
   return possibleMatch(side.m); // w oder l: gleiches Team-Reservoir
 }
