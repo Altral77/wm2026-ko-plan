@@ -203,6 +203,12 @@ def write_ko_json(groups):
     nres = sum(1 for v in ko.values() if v['th'] is not None)
     print(f"ko.json: {nteams}/32 Spiele mit Team(s), {nres}/32 mit Ergebnis")
 
+# Manuelle Korrekturen für Spiele, die Wikipedia (noch) nicht oder falsch hat.
+# Format:  (Gruppe, HeimCode, GastCode): (HeimTore, GastTore)
+OVERRIDES = {
+    ('F', 'TUN', 'JPN'): (0, 4),   # 20.06.: Tunesien 0:4 Japan – fehlt auf der Wikipedia-Gruppe-F-Seite
+}
+
 def main():
     html = open('index.html', encoding='utf-8').read()
     block = re.search(r'/\*DATA_START\*/(.*?)/\*DATA_END\*/', html, re.S)
@@ -218,6 +224,9 @@ def main():
             results = parse_results(fetch(g))
             if not results:
                 raise ValueError("keine Spiele gefunden")
+            for (og, c1, c2), (s1, s2) in OVERRIDES.items():   # manuelle Korrekturen einspielen
+                if og == g:
+                    results[frozenset((c1, c2))] = (c1, s1, s2)
             groups[g] = update_group(groups[g], results)
             updated.append(g)
         except Exception as e:
